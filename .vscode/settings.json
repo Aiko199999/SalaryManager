@@ -1,0 +1,8 @@
+{
+  "dotnet.defaultSolution": "SalaryManager.sln",
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "**/salarymanager.db": true
+  }
+}
