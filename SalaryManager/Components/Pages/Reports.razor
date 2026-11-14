@@ -1,0 +1,75 @@
+@page "/reports"
+@inject IPayrollService PayrollService
+@inject IJSRuntime JS
+
+<PageTitle>Reports | SalaryManager</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">ANALYTICS</span>
+        <h1>Department report</h1>
+        <p class="muted">Compare payroll totals and average net payments by department.</p>
+    </div>
+    <button class="button button-primary" @onclick="ExportCsvAsync" disabled="@(reports.Count == 0)">↓ Export CSV</button>
+</div>
+
+<section class="panel">
+    <div class="panel-heading"><div><h2>Payroll by department</h2><p class="muted">Based on saved payroll records</p></div></div>
+    @if (reports.Count == 0)
+    {
+        <div class="empty-state">No payroll data is available yet. Create a payroll record first.</div>
+    }
+    else
+    {
+        var maximum = reports.Max(item => item.TotalPayroll);
+        <div class="report-list">
+            @foreach (var report in reports)
+            {
+                var width = maximum == 0 ? 0 : (double)(report.TotalPayroll / maximum * 100);
+                var widthCss = width.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+                <div class="report-row">
+                    <div class="report-row-heading">
+                        <strong>@report.DepartmentName</strong>
+                        <span>@report.EmployeeCount employees</span>
+                    </div>
+                    <div class="bar-track"><div class="bar-fill" style="width: @widthCss"></div></div>
+                    <div class="report-row-footer">
+                        <strong>@report.TotalPayroll.ToString("N0") KZT</strong>
+                        <span>Average: @report.AverageNetSalary.ToString("N0") KZT</span>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="table-wrap report-table">
+            <table>
+                <thead><tr><th>Department</th><th>Employees</th><th>Total net payroll</th><th>Average net salary</th></tr></thead>
+                <tbody>
+                    @foreach (var report in reports)
+                    {
+                        <tr><td><strong>@report.DepartmentName</strong></td><td>@report.EmployeeCount</td><td>@report.TotalPayroll.ToString("N0") KZT</td><td>@report.AverageNetSalary.ToString("N0") KZT</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<DepartmentSummary> reports = [];
+
+    protected override async Task OnInitializedAsync()
+        => reports = await PayrollService.GetDepartmentReportAsync();
+
+    private async Task ExportCsvAsync()
+    {
+        var lines = new List<string> { "Department,Employees,Total net payroll,Average net salary" };
+        lines.AddRange(reports.Select(item => string.Join(",",
+            Csv(item.DepartmentName),
+            item.EmployeeCount,
+            item.TotalPayroll.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            item.AverageNetSalary.ToString(System.Globalization.CultureInfo.InvariantCulture))));
+        await JS.InvokeVoidAsync("downloadCsv", "department-payroll-report.csv", string.Join("\r\n", lines));
+    }
+
+    private static string Csv(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
+}

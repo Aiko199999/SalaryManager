@@ -1,0 +1,155 @@
+@page "/payroll"
+@inject IEmployeeService EmployeeService
+@inject IPayrollService PayrollService
+@inject IOptions<PayrollOptions> Options
+
+<PageTitle>Payroll | SalaryManager</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">PAYROLL</span>
+        <h1>Calculate payroll</h1>
+        <p class="muted">Prepare a payment and review the result before saving it.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(hasError ? "alert-error" : "alert-success")">@message</div>
+}
+
+<div class="payroll-layout">
+    <section class="panel form-panel payroll-form-panel">
+        <div class="panel-heading"><div><h2>Payroll details</h2><p class="muted">All amounts are in Kazakhstani tenge (KZT).</p></div></div>
+        @if (employees.Count == 0)
+        {
+            <div class="empty-state">There are no active employees. Add an employee before creating payroll.</div>
+        }
+        else
+        {
+            <EditForm Model="@form" OnValidSubmit="@PreviewAsync">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label>Employee
+                    <InputSelect @bind-Value="form.EmployeeId" @bind-Value:after="ClearPreview">
+                        <option value="0">Choose an employee</option>
+                        @foreach (var employee in employees)
+                        {
+                            <option value="@employee.Id">@employee.FullName — @employee.BaseSalary.ToString("N0") KZT</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>Payroll period<InputDate @bind-Value="form.Period" @bind-Value:after="ClearPreview" /></label>
+                <div class="two-fields">
+                    <label>Bonus (KZT)<InputNumber @bind-Value="form.Bonus" @bind-Value:after="ClearPreview" min="0" /></label>
+                    <label>Deductions (KZT)<InputNumber @bind-Value="form.Deductions" @bind-Value:after="ClearPreview" min="0" /></label>
+                </div>
+                <div class="tax-note">
+                    <span>Demonstration tax rate</span>
+                    <strong>@Options.Value.TaxRate.ToString("P0")</strong>
+                </div>
+                <button class="button button-primary button-wide" type="submit">Preview calculation</button>
+            </EditForm>
+        }
+    </section>
+
+    <section class="panel calculation-panel">
+        <div class="panel-heading"><div><h2>Calculation preview</h2><p class="muted">Review each step before saving.</p></div></div>
+        @if (calculation is null)
+        {
+            <div class="preview-placeholder">
+                <div class="preview-symbol">₸</div>
+                <strong>Your calculation will appear here</strong>
+                <p>Choose an employee and enter any bonus or deductions.</p>
+            </div>
+        }
+        else
+        {
+            <div class="calculation-lines">
+                <div><span>Base salary</span><strong>@Money(calculationBase)</strong></div>
+                <div><span>Bonus</span><strong>@Money(form.Bonus)</strong></div>
+                <div class="calculation-total"><span>Gross salary</span><strong>@Money(calculation.GrossSalary)</strong></div>
+                <div><span>Deductions</span><strong class="negative">− @Money(form.Deductions)</strong></div>
+                <div><span>Taxable salary</span><strong>@Money(calculation.TaxableSalary)</strong></div>
+                <div><span>Demonstration tax (@Options.Value.TaxRate.ToString("P0"))</span><strong class="negative">− @Money(calculation.Tax)</strong></div>
+                <div class="net-total"><span>Net salary</span><strong>@Money(calculation.NetSalary)</strong></div>
+            </div>
+            <button class="button button-primary button-wide" @onclick="SaveAsync" disabled="isSaving">@(isSaving ? "Saving..." : "Save payroll record")</button>
+            <p class="small-note">Saving creates a pending payment in the payment history.</p>
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<Employee> employees = [];
+    private PayrollForm form = new();
+    private PayrollCalculation? calculation;
+    private decimal calculationBase;
+    private string message = string.Empty;
+    private bool hasError;
+    private bool isSaving;
+
+    protected override async Task OnInitializedAsync()
+        => employees = await EmployeeService.GetActiveAsync();
+
+    private void ClearPreview()
+    {
+        calculation = null;
+        message = string.Empty;
+    }
+
+    private async Task PreviewAsync()
+    {
+        try
+        {
+            calculation = await PayrollService.PreviewAsync(form.EmployeeId, form.Bonus, form.Deductions);
+            calculationBase = employees.First(employee => employee.Id == form.EmployeeId).BaseSalary;
+            hasError = false;
+            message = string.Empty;
+        }
+        catch (Exception)
+        {
+            calculation = null;
+            hasError = true;
+            message = "The calculation could not be completed. Check the selected employee and amounts.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (calculation is null || isSaving)
+            return;
+
+        isSaving = true;
+        try
+        {
+            var saved = await PayrollService.SaveAsync(form.EmployeeId, form.Period, form.Bonus, form.Deductions);
+            calculation = PayrollCalculator.Calculate(new PayrollDraft(
+                form.EmployeeId, calculationBase, form.Bonus, form.Deductions, Options.Value.TaxRate));
+            hasError = false;
+            message = "Payroll saved. " + saved.Receipt.Replace(Environment.NewLine, " · ");
+        }
+        catch (Exception)
+        {
+            hasError = true;
+            message = "Payroll could not be saved. Check the details and try again.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private static string Money(decimal amount) => $"{amount:N2} KZT";
+
+    private sealed class PayrollForm
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Choose an employee.")]
+        public int EmployeeId { get; set; }
+        public DateTime Period { get; set; } = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+        [Range(typeof(decimal), "0", "100000000")]
+        public decimal Bonus { get; set; }
+        [Range(typeof(decimal), "0", "100000000")]
+        public decimal Deductions { get; set; }
+    }
+}

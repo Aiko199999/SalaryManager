@@ -1,0 +1,103 @@
+@page "/history"
+@inject IPayrollService PayrollService
+@inject AppState AppState
+@implements IDisposable
+
+<PageTitle>Payment history | SalaryManager</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">RECORDS</span>
+        <h1>Payment history</h1>
+        <p class="muted">Review saved payroll records and update payment status.</p>
+    </div>
+    <a class="button button-primary" href="/payroll">+ New payroll</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert alert-success">@message</div>
+}
+
+<section class="panel">
+    <div class="panel-heading">
+        <div><h2>All payroll records</h2><p class="muted">@entries.Count records saved in the database</p></div>
+        <select class="filter-select" @bind="statusFilter" aria-label="Filter by payment status">
+            <option value="all">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
+        </select>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Employee</th><th>Department</th><th>Period</th><th>Gross salary</th><th>Tax</th><th>Net salary</th><th>Reference</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var entry in FilteredEntries)
+                {
+                    <tr>
+                        <td><strong>@entry.Employee?.FullName</strong><small>@entry.Employee?.JobTitle</small></td>
+                        <td>@entry.Employee?.Department?.Name</td>
+                        <td>@entry.Period.ToString("MMM yyyy")</td>
+                        <td>@entry.GrossSalary.ToString("N0")</td>
+                        <td>@entry.Tax.ToString("N0")</td>
+                        <td class="amount">@entry.NetSalary.ToString("N0") KZT</td>
+                        <td>@(string.IsNullOrWhiteSpace(entry.PaymentReference) ? "—" : entry.PaymentReference)</td>
+                        <td><StatusTag Paid="@entry.IsPaid" /></td>
+                        <td>
+                            @if (!entry.IsPaid)
+                            {
+                                <button class="table-action" @onclick="() => MarkPaidAsync(entry.Id)">Mark paid</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (FilteredEntries.Count == 0)
+        {
+            <div class="empty-state">There are no records for this filter.</div>
+        }
+    </div>
+</section>
+
+@code {
+    private List<PayrollEntry> entries = [];
+    private string statusFilter = "all";
+    private string message = string.Empty;
+
+    private List<PayrollEntry> FilteredEntries => entries
+        .Where(entry => statusFilter == "all"
+            || (statusFilter == "paid" && entry.IsPaid)
+            || (statusFilter == "pending" && !entry.IsPaid))
+        .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.Changed += Refresh;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => entries = (await PayrollService.GetHistoryAsync()).ToList();
+
+    private void Refresh() => _ = InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private async Task MarkPaidAsync(int id)
+    {
+        try
+        {
+            await PayrollService.MarkPaidAsync(id);
+            await LoadAsync();
+            message = "Payment status updated.";
+        }
+        catch (Exception)
+        {
+            message = "The payment status could not be updated.";
+        }
+    }
+
+    public void Dispose() => AppState.Changed -= Refresh;
+}
