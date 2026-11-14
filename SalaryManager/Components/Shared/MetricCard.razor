@@ -1,0 +1,15 @@
+<div class="metric-card">
+    <div class="metric-top">
+        <span class="metric-label">@Label</span>
+        <span class="metric-icon">@Icon</span>
+    </div>
+    <div class="metric-value">@Value</div>
+    <div class="metric-hint">@Hint</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter] public string Hint { get; set; } = string.Empty;
+    [Parameter] public string Icon { get; set; } = "•";
+}
