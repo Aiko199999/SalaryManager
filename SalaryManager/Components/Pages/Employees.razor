@@ -1,0 +1,159 @@
+@page "/employees"
+@inject IEmployeeService EmployeeService
+
+<PageTitle>Employees | SalaryManager</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">PEOPLE</span>
+        <h1>Employees</h1>
+        <p class="muted">Keep employee details and salary information in one place.</p>
+    </div>
+    <button class="button button-primary" @onclick="NewEmployee">+ Add employee</button>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(hasError ? "alert-error" : "alert-success")">@message</div>
+}
+
+<div class="employee-layout">
+    <section class="panel employee-table-panel">
+        <div class="panel-heading">
+            <div><h2>Employee directory</h2><p class="muted">@employees.Count employee records</p></div>
+            <input class="search-input" placeholder="Search employees" @bind="searchText" @bind:event="oninput" aria-label="Search employees" />
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Employee</th><th>Department</th><th>Base salary</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var employee in FilteredEmployees)
+                    {
+                        <tr>
+                            <td><strong>@employee.FullName</strong><small>@employee.JobTitle</small></td>
+                            <td>@employee.Department?.Name</td>
+                            <td class="amount">@employee.BaseSalary.ToString("N0") KZT</td>
+                            <td><span class="status-tag @(employee.IsActive ? "paid" : "inactive")">@(employee.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="actions-cell">
+                                <button class="table-action" @onclick="() => EditEmployee(employee)">Edit</button>
+                                <button class="table-action" @onclick="() => ChangeStatusAsync(employee)">@(employee.IsActive ? "Deactivate" : "Activate")</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (FilteredEmployees.Count == 0)
+            {
+                <div class="empty-state">No employees match your search.</div>
+            }
+        </div>
+    </section>
+
+    @if (showForm)
+    {
+        <section class="panel form-panel">
+            <div class="panel-heading"><div><h2>@(model.Id == 0 ? "New employee" : "Edit employee")</h2><p class="muted">Enter the details below.</p></div></div>
+            <EditForm Model="@model" OnValidSubmit="@SaveAsync">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+                <label>Full name<InputText @bind-Value="model.FullName" placeholder="e.g. Alex Morgan" /></label>
+                <label>Job title<InputText @bind-Value="model.JobTitle" placeholder="e.g. Accountant" /></label>
+                <label>Department
+                    <InputSelect @bind-Value="model.DepartmentId">
+                        <option value="0">Choose a department</option>
+                        @foreach (var department in departments)
+                        {
+                            <option value="@department.Id">@department.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+                <label>Monthly base salary (KZT)<InputNumber @bind-Value="model.BaseSalary" min="1" /></label>
+                <div class="form-actions">
+                    <button class="button button-primary" type="submit">Save employee</button>
+                    <button class="button button-light" type="button" @onclick="CloseForm">Cancel</button>
+                </div>
+            </EditForm>
+        </section>
+    }
+</div>
+
+@code {
+    private List<Employee> employees = [];
+    private IReadOnlyList<Department> departments = [];
+    private Employee model = new();
+    private bool showForm;
+    private bool hasError;
+    private string message = string.Empty;
+    private string searchText = string.Empty;
+
+    private List<Employee> FilteredEmployees => employees
+        .Where(employee => employee.FullName.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || employee.JobTitle.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || (employee.Department?.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        employees = (await EmployeeService.GetAllAsync()).ToList();
+        departments = await EmployeeService.GetDepartmentsAsync();
+    }
+
+    private void NewEmployee()
+    {
+        model = new Employee { DepartmentId = departments.FirstOrDefault()?.Id ?? 0, BaseSalary = 300000 };
+        showForm = true;
+        message = string.Empty;
+    }
+
+    private void EditEmployee(Employee employee)
+    {
+        model = new Employee
+        {
+            Id = employee.Id,
+            FullName = employee.FullName,
+            JobTitle = employee.JobTitle,
+            DepartmentId = employee.DepartmentId,
+            BaseSalary = employee.BaseSalary,
+            IsActive = employee.IsActive
+        };
+        showForm = true;
+        message = string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await EmployeeService.SaveAsync(model);
+            await LoadAsync();
+            showForm = false;
+            hasError = false;
+            message = "Employee details saved.";
+        }
+        catch (Exception)
+        {
+            hasError = true;
+            message = "The employee could not be saved. Check the details and try again.";
+        }
+    }
+
+    private async Task ChangeStatusAsync(Employee employee)
+    {
+        try
+        {
+            await EmployeeService.SetActiveAsync(employee.Id, !employee.IsActive);
+            await LoadAsync();
+            hasError = false;
+            message = employee.IsActive ? "Employee deactivated." : "Employee activated.";
+        }
+        catch (Exception)
+        {
+            hasError = true;
+            message = "The employee status could not be changed.";
+        }
+    }
+
+    private void CloseForm() => showForm = false;
+}

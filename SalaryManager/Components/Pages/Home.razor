@@ -1,0 +1,94 @@
+@page "/"
+@inject IPayrollService PayrollService
+@inject AppState AppState
+@implements IDisposable
+
+<PageTitle>Overview | SalaryManager</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">OVERVIEW</span>
+        <h1>Good to see you</h1>
+        <p class="muted">Here is what is happening with your payroll this month.</p>
+    </div>
+    <a class="button button-primary" href="/payroll">+ Create payroll</a>
+</div>
+
+@if (summary is null)
+{
+    <div class="panel loading-state">Loading payroll overview...</div>
+}
+else
+{
+    <section class="metrics-grid">
+        <MetricCard Label="Active employees" Value="@summary.ActiveEmployees.ToString()" Hint="Currently on the team" Icon="♙" />
+        <MetricCard Label="Monthly payroll" Value="@Money(summary.MonthlyPayroll)" Hint="Net amount for this month" Icon="₸" />
+        <MetricCard Label="Average payment" Value="@Money(summary.AverageNetSalary)" Hint="Average net salary" Icon="↗" />
+        <MetricCard Label="Pending payments" Value="@summary.PendingPayments.ToString()" Hint="Waiting to be marked as paid" Icon="◷" />
+    </section>
+
+    <section class="content-grid dashboard-grid">
+        <div class="panel">
+            <div class="panel-heading">
+                <div>
+                    <h2>Recent payroll activity</h2>
+                    <p class="muted">The latest saved payroll records</p>
+                </div>
+                <a class="text-link" href="/history">View history →</a>
+            </div>
+            @if (summary.RecentEntries.Count == 0)
+            {
+                <div class="empty-state">No payroll records yet. Create the first payroll to see activity here.</div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Employee</th><th>Period</th><th>Net salary</th><th>Status</th></tr></thead>
+                        <tbody>
+                            @foreach (var entry in summary.RecentEntries)
+                            {
+                                <tr>
+                                    <td><strong>@entry.Employee?.FullName</strong><small>@entry.Employee?.JobTitle</small></td>
+                                    <td>@entry.Period.ToString("MMMM yyyy")</td>
+                                    <td class="amount">@Money(entry.NetSalary)</td>
+                                    <td><StatusTag Paid="@entry.IsPaid" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+
+        <div class="panel side-panel">
+            <div class="panel-heading"><div><h2>Quick actions</h2><p class="muted">Common tasks</p></div></div>
+            <a class="quick-action" href="/employees"><span class="quick-icon">＋</span><span><strong>Add an employee</strong><small>Update the employee directory</small></span><b>→</b></a>
+            <a class="quick-action" href="/payroll"><span class="quick-icon">▤</span><span><strong>Calculate payroll</strong><small>Prepare a monthly payment</small></span><b>→</b></a>
+            <a class="quick-action" href="/reports"><span class="quick-icon">▥</span><span><strong>Open reports</strong><small>Compare department totals</small></span><b>→</b></a>
+            <div class="info-note"><strong>Note</strong><p>The tax rate in this project is a demonstration setting. It is not a legal payroll calculation.</p></div>
+        </div>
+    </section>
+}
+
+@code {
+    private DashboardSummary? summary;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppState.Changed += Refresh;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => summary = await PayrollService.GetDashboardAsync();
+
+    private void Refresh() => _ = InvokeAsync(async () =>
+    {
+        await LoadAsync();
+        StateHasChanged();
+    });
+
+    private static string Money(decimal amount) => $"{amount:N0} KZT";
+
+    public void Dispose() => AppState.Changed -= Refresh;
+}
